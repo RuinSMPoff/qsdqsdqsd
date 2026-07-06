@@ -188,7 +188,9 @@ function startAntiIdleMovement() {
                     x: prevPosition ? actualPosition.x - prevPosition.x : 0,
                     y: prevPosition ? actualPosition.y - prevPosition.y : 0,
                     z: prevPosition ? actualPosition.z - prevPosition.z : 0
-                }
+                },
+                analogue_move_vector: { x: 0, z: 0 },
+                camera_orientation: { x: 0, y: 0, z: 0 }
             })
 
             prevPosition = { ...actualPosition }
