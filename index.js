@@ -112,39 +112,90 @@ function startBot() {
 
 // Fonction pour spammer le click droit (interaction)
 // Fonction pour éviter l'idle timeout : saut périodique (action valide du protocole)
-function startSpamClick() {
-    if (clickInterval) {
-        clearInterval(clickInterval)
-    }
+// --- Anti-idle par mouvement réel ---
+let moveState = 'walk' // 'walk' ou 'jump'
+let stateStartTime = Date.now()
+let walkDirection = 1 // 1 ou -1, pour faire des allers-retours
+let tickCounter = 0
+
+function startAntiIdleMovement() {
+    if (clickInterval) clearInterval(clickInterval)
 
     console.log('========================================')
-    console.log('🚀 DÉMARRAGE ANTI-IDLE (saut périodique)')
+    console.log('🚶 DÉMARRAGE ANTI-IDLE (marche + saut)')
     console.log('========================================')
 
-    clickCount = 0
+    moveState = 'walk'
+    stateStartTime = Date.now()
 
     clickInterval = setInterval(() => {
         if (!client || entityRuntimeId === null) return
 
         try {
-            // 'jump' est une action VALIDE de l'enum player_action
-            client.queue('player_action', {
-                runtime_entity_id: entityRuntimeId,
-                action: 'jump',
+            const now = Date.now()
+            const elapsed = now - stateStartTime
+
+            // Transition d'état
+            if (moveState === 'walk' && elapsed > 5000) {
+                moveState = 'jump'
+                stateStartTime = now
+                walkDirection *= -1 // repart dans l'autre sens la prochaine fois
+            } else if (moveState === 'jump' && elapsed > 800) {
+                moveState = 'walk'
+                stateStartTime = now
+            }
+
+            let onGround = true
+
+            if (moveState === 'walk') {
+                // Petit pas dans la direction courante, à ~4.3 blocs/s (vitesse normale)
+                const speed = 0.13 // blocs par tick (~150ms d'intervalle ici)
+                const yaw = spawnRotation.yaw || 0
+                const rad = (yaw * Math.PI) / 180
+                actualPosition.x += -Math.sin(rad) * speed * walkDirection
+                actualPosition.z += -Math.cos(rad) * speed * walkDirection
+            } else {
+                // Phase de saut : monte puis redescend
+                const jumpElapsed = elapsed
+                if (jumpElapsed < 400) {
+                    actualPosition.y += 0.08
+                    onGround = false
+                } else {
+                    actualPosition.y -= 0.08
+                    onGround = jumpElapsed > 700
+                }
+            }
+
+            tickCounter++
+
+            client.queue('move_player', {
+                runtime_id: entityRuntimeId,
                 position: actualPosition,
-                result_position: actualPosition,
-                data: 0
+                pitch: spawnRotation.pitch || 0,
+                yaw: spawnRotation.yaw || 0,
+                head_yaw: spawnRotation.headYaw || spawnRotation.yaw || 0,
+                mode: 'normal',
+                on_ground: onGround,
+                ridden_runtime_id: 0,
+                tick: tickCounter
             })
 
             clickCount++
-
             if (clickCount % 50 === 0) {
-                console.log(`[${clickCount}] ✅ Saut envoyé (anti-idle actif)`)
+                console.log(`[${clickCount}] ✅ Mouvement envoyé (${moveState}) - pos: ${actualPosition.x.toFixed(2)}, ${actualPosition.y.toFixed(2)}, ${actualPosition.z.toFixed(2)}`)
             }
         } catch (error) {
-            console.error('❌ Erreur lors du saut:', error.message)
+            console.error('❌ Erreur lors du mouvement:', error.message)
         }
-    }, 3000) // toutes les 3s, largement suffisant pour reset l'idle timer
+    }, 150)
+}
+
+function stopAntiIdleMovement() {
+    if (clickInterval) {
+        clearInterval(clickInterval)
+        clickInterval = null
+        console.log('⏹️ Anti-idle arrêté')
+    }
 }
 
 // Fonction pour arrêter le spam
