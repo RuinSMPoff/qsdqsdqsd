@@ -173,24 +173,24 @@ function startAntiIdleMovement() {
 
             // player_auth_input = paquet que le CLIENT envoie pour piloter SON PROPRE mouvement
             // (move_player sert surtout au serveur pour déplacer les autres entités / téléporter)
-            client.queue('player_auth_input', {
-                pitch: spawnRotation.pitch || 0,
-                yaw: spawnRotation.yaw || 0,
-                position: actualPosition,
-                move_vector: { x: 0, z: 0 }, // laissé à 0, c'est le delta de position ci-dessous qui fait bouger
-                head_yaw: spawnRotation.headYaw || spawnRotation.yaw || 0,
-                input_data: [],
-                input_mode: 'mouse',
-                play_mode: 'normal',
-                interaction_model: 'classic',
-                interact_rotation: { x: 0, y: 0 },
-                tick: BigInt(tickCounter),
-                delta: {
-                    x: prevPosition ? actualPosition.x - prevPosition.x : 0,
-                    y: prevPosition ? actualPosition.y - prevPosition.y : 0,
-                    z: prevPosition ? actualPosition.z - prevPosition.z : 0
-                }
-            })
+client.queue('player_auth_input', {
+    pitch: spawnRotation.pitch || 0,
+    yaw: spawnRotation.yaw || 0,
+    position: actualPosition,
+    move_vector: { x: 0, y: 0 },
+    head_yaw: spawnRotation.headYaw || spawnRotation.yaw || 0,
+    input_data: [],
+    input_mode: 'mouse',
+    play_mode: 'normal',
+    interaction_model: 'classic',
+    interact_rotation: { x: 0, y: 0 },
+    tick: BigInt(tickCounter),
+    delta: {
+        x: prevPosition ? actualPosition.x - prevPosition.x : 0,
+        y: prevPosition ? actualPosition.y - prevPosition.y : 0,
+        z: prevPosition ? actualPosition.z - prevPosition.z : 0
+    }
+})
 
             prevPosition = { ...actualPosition }
 
