@@ -19,15 +19,8 @@ let spawnPosition = { x: 0, y: 69, z: 0 }
 let spawnRotation = { pitch: 0, yaw: 0, headYaw: 0 }
 let actualPosition = { x: 0, y: 69, z: 0 }
 
-// Position cible (où se trouve la porte)
-const TARGET_POSITION = {
-    x: 2999859,
-    y: -63,
-    z: -48
-}
-
-let isTeleported = false
 let clickInterval = null
+let clickCount = 0
 
 function startBot() {
     client = bedrock.createClient({
@@ -59,6 +52,7 @@ function startBot() {
 
     client.on('spawn', () => {
         console.log('Bot spawn dans le monde')
+        console.log(`Position actuelle: ${actualPosition.x}, ${actualPosition.y}, ${actualPosition.z}`)
 
         if (entityRuntimeId !== null) {
             client.queue('set_local_player_as_initialized', {
@@ -69,10 +63,10 @@ function startBot() {
 
         sendChat('hello')
         
-        // Attendre que le monde soit chargé puis se téléporter
+        // Démarrer le spam de clics après 2 secondes
         setTimeout(() => {
-            teleportToTarget()
-        }, 3000)
+            startSpamClick()
+        }, 2000)
     })
 
     client.on('text', (packet) => {
@@ -116,103 +110,46 @@ function startBot() {
     })
 }
 
-// Fonction pour se téléporter à la position cible
-function teleportToTarget() {
-    if (!client) return
-    
-    console.log(`Tentative de téléportation vers ${TARGET_POSITION.x}, ${TARGET_POSITION.y}, ${TARGET_POSITION.z}`)
-    
-    try {
-        client.queue('command_request', {
-            command: `/tp ${username} ${TARGET_POSITION.x} ${TARGET_POSITION.y} ${TARGET_POSITION.z}`
-        })
-        console.log('Commande /tp envoyée')
-    } catch (error) {
-        console.log('Erreur avec /tp:', error.message)
-    }
-    
-    // Forcer la téléportation via le protocole
-    setTimeout(() => {
-        try {
-            client.queue('move_player', {
-                runtime_entity_id: entityRuntimeId,
-                position: { 
-                    x: TARGET_POSITION.x, 
-                    y: TARGET_POSITION.y, 
-                    z: TARGET_POSITION.z 
-                },
-                rotation: { 
-                    x: spawnRotation.pitch, 
-                    y: spawnRotation.yaw, 
-                    z: 0 
-                },
-                mode: 'teleport',
-                on_ground: true,
-                ridden_runtime_entity_id: 0,
-                teleport: true
-            })
-            console.log('Paquet de téléportation envoyé')
-            
-            actualPosition = {
-                x: TARGET_POSITION.x,
-                y: TARGET_POSITION.y,
-                z: TARGET_POSITION.z
-            }
-            isTeleported = true
-            
-            // Démarrer le spam de clics après la téléportation
-            setTimeout(() => {
-                startSpamClick()
-            }, 2000)
-        } catch (error) {
-            console.log('Erreur avec move_player teleport:', error.message)
-        }
-    }, 1000)
-    
-    // Tentative alternative avec /tp relative
-    setTimeout(() => {
-        try {
-            const dx = TARGET_POSITION.x - actualPosition.x
-            const dy = TARGET_POSITION.y - actualPosition.y
-            const dz = TARGET_POSITION.z - actualPosition.z
-            
-            client.queue('command_request', {
-                command: `/tp ${username} ~${dx} ~${dy} ~${dz}`
-            })
-            console.log('Commande /tp relative envoyée')
-        } catch (error) {
-            console.log('Erreur avec /tp relative:', error.message)
-        }
-    }, 2000)
-}
-
-// Fonction pour spammer le click droit
+// Fonction pour spammer le click droit (interaction)
 function startSpamClick() {
     if (clickInterval) {
         clearInterval(clickInterval)
     }
     
-    console.log('DÉMARRAGE DU SPAM DE CLIC DROIT (interaction)')
-    console.log('Le bot va cliquer toutes les 200ms sur la position cible')
+    console.log('========================================')
+    console.log('🚀 DÉMARRAGE DU SPAM DE CLIC DROIT')
+    console.log(`📌 Position actuelle: ${actualPosition.x}, ${actualPosition.y}, ${actualPosition.z}`)
+    console.log('🔄 Le bot clique toutes les 100ms')
+    console.log('========================================')
     
-    // Variables pour alterner les positions de clic
-    let clickCount = 0
+    clickCount = 0
     
     clickInterval = setInterval(() => {
         if (!client || !entityRuntimeId) return
         
-        // Position de la porte
-        const pos = TARGET_POSITION
+        // Utiliser la position actuelle du joueur
+        const pos = actualPosition
         
         try {
+            // Envoyer un click droit sur le bloc devant le joueur
+            // Calculer la direction devant le joueur
+            const yaw = spawnRotation.yaw || 0
+            const rad = (yaw * Math.PI) / 180
+            const forwardX = -Math.sin(rad)
+            const forwardZ = -Math.cos(rad)
+            
+            const blockX = Math.round(pos.x + forwardX * 1.5)
+            const blockZ = Math.round(pos.z + forwardZ * 1.5)
+            const blockY = Math.floor(pos.y)
+            
             // CLIC DROIT (interaction) - pas de destruction
             client.queue('player_action', {
                 runtime_entity_id: entityRuntimeId,
-                action: 'interact', // INTERACT = click droit, pas de destruction
+                action: 'interact', // INTERACT = click droit
                 position: { 
-                    x: pos.x, 
-                    y: pos.y + (clickCount % 2), // Alterne entre le bloc et le bloc au-dessus
-                    z: pos.z 
+                    x: blockX, 
+                    y: blockY + (clickCount % 2), // Alterne entre le bloc et le bloc au-dessus
+                    z: blockZ 
                 },
                 face: 1 // Face supérieure
             })
@@ -225,39 +162,52 @@ function startSpamClick() {
             })
             
             // Alterner les positions pour plus de chances
-            if (clickCount % 3 === 0) {
-                // Cliquer devant
+            // Cliquer sur différentes positions autour
+            if (clickCount % 4 === 0) {
+                // Devant
                 client.queue('player_action', {
                     runtime_entity_id: entityRuntimeId,
                     action: 'interact',
                     position: { 
-                        x: pos.x, 
-                        y: pos.y, 
-                        z: pos.z + 1 
+                        x: blockX, 
+                        y: blockY, 
+                        z: blockZ 
                     },
                     face: 1
                 })
-            } else if (clickCount % 3 === 1) {
-                // Cliquer à gauche
+            } else if (clickCount % 4 === 1) {
+                // Devant + haut
                 client.queue('player_action', {
                     runtime_entity_id: entityRuntimeId,
                     action: 'interact',
                     position: { 
-                        x: pos.x + 1, 
-                        y: pos.y, 
-                        z: pos.z 
+                        x: blockX, 
+                        y: blockY + 1, 
+                        z: blockZ 
+                    },
+                    face: 1
+                })
+            } else if (clickCount % 4 === 2) {
+                // À droite
+                client.queue('player_action', {
+                    runtime_entity_id: entityRuntimeId,
+                    action: 'interact',
+                    position: { 
+                        x: blockX + 1, 
+                        y: blockY, 
+                        z: blockZ 
                     },
                     face: 1
                 })
             } else {
-                // Cliquer à droite
+                // À gauche
                 client.queue('player_action', {
                     runtime_entity_id: entityRuntimeId,
                     action: 'interact',
                     position: { 
-                        x: pos.x - 1, 
-                        y: pos.y, 
-                        z: pos.z 
+                        x: blockX - 1, 
+                        y: blockY, 
+                        z: blockZ 
                     },
                     face: 1
                 })
@@ -265,15 +215,15 @@ function startSpamClick() {
             
             clickCount++
             
-            // Afficher un message tous les 50 clics
-            if (clickCount % 50 === 0) {
-                console.log(`[${clickCount}] Clics d'interaction envoyés`)
+            // Afficher un message toutes les 100 clics
+            if (clickCount % 100 === 0) {
+                console.log(`[${clickCount}] ✅ Clics d'interaction envoyés sur le bloc ${blockX}, ${blockY}, ${blockZ}`)
             }
             
         } catch (error) {
-            console.error('Erreur lors du clic:', error.message)
+            console.error('❌ Erreur lors du clic:', error.message)
         }
-    }, 200) // Clic toutes les 200ms (5 clics par seconde)
+    }, 100) // Clic toutes les 100ms (10 clics par seconde)
 }
 
 // Fonction pour arrêter le spam
@@ -281,7 +231,7 @@ function stopSpamClick() {
     if (clickInterval) {
         clearInterval(clickInterval)
         clickInterval = null
-        console.log('Spam de clics arrêté')
+        console.log('⏹️ Spam de clics arrêté')
     }
 }
 
@@ -304,7 +254,6 @@ function reconnect() {
     console.log('Reconnexion dans 5 secondes...')
     setTimeout(() => {
         reconnecting = false
-        isTeleported = false
         stopSpamClick()
         startBot()
     }, 5000)
@@ -324,14 +273,14 @@ app.get('/', (req, res) => {
     res.send(`<b>${username}</b> is Online At <b>${host}</b>
     <br><br>Connected: <b>${connected ? 'Yes' : 'No'}</b>
     <br><br>Popularity Counter <b>${popularity}</b>
-    <br><br>Position: ${TARGET_POSITION.x}, ${TARGET_POSITION.y}, ${TARGET_POSITION.z}
-    <br><br>Status: ${isTeleported ? '🟢 Téléporté et spam de clics actif' : '🟡 En cours de téléportation...'}
+    <br><br>Position: ${actualPosition.x}, ${actualPosition.y}, ${actualPosition.z}
+    <br><br>Status: ${clickInterval ? '🟢 Spam de clics actif' : '🔴 Inactif'}
+    <br><br>Clics envoyés: ${clickCount}
     <br><br>Made By <b>https://github.com/healer-op/AternosAfkBot</b>`)
 })
 
 app.listen(port, () => {
     console.log(`Example app listening at http://localhost:${port}`)
     console.log('MADE BY HEALER')
-    console.log(`Position cible: ${TARGET_POSITION.x}, ${TARGET_POSITION.y}, ${TARGET_POSITION.z}`)
-    console.log('Le bot va spammer le click droit en continu !')
+    console.log('✅ Bot prêt - Spam de click droit actif !')
 })
