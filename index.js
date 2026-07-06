@@ -18,6 +18,11 @@ let entityRuntimeId = null
 let spawnPosition = { x: 0, y: 64, z: 0 }
 let spawnRotation = { pitch: 0, yaw: 0, headYaw: 0 }
 
+// Ajout : détection de la porte et interaction
+let doorFound = false
+let doorPosition = null
+let isDoorOpen = false
+
 function startBot() {
     client = bedrock.createClient({
         host: host,
@@ -25,7 +30,6 @@ function startBot() {
         username: username,
         offline: false,
         auth: 'microsoft'
-        // version: '1.21.50' // décommente et adapte si le serveur refuse la connexion (mismatch de version)
     })
 
     client.on('join', () => {
@@ -33,7 +37,6 @@ function startBot() {
         connected = 1
     })
 
-    // Récupère l'ID d'entité et la position/rotation réelles de spawn
     client.on('start_game', (packet) => {
         entityRuntimeId = packet.runtime_entity_id
         if (packet.player_position) {
@@ -50,8 +53,6 @@ function startBot() {
     client.on('spawn', () => {
         console.log('Bot spawn dans le monde')
 
-        // ÉTAPE OBLIGATOIRE : sans ce paquet le serveur considère
-        // que le joueur n'a jamais fini de charger et le déconnecte.
         if (entityRuntimeId !== null) {
             client.queue('set_local_player_as_initialized', {
                 runtime_entity_id: entityRuntimeId
@@ -62,11 +63,34 @@ function startBot() {
         }
 
         sendChat('hello')
-        // Pas besoin d'envoyer de mouvement pour rester connecté :
-        // RakNet gère le keep-alive tout seul au niveau de la connexion.
-        // Envoyer player_auth_input sans que le serveur l'attende (mode
-        // "Server Authoritative Movement" désactivé côté PocketMine-MP)
-        // provoque un "Packet processing error" et un kick immédiat.
+        
+        // Démarrer la recherche de porte
+        setTimeout(() => {
+            findAndInteractWithDoor()
+        }, 3000) // Attendre 3 secondes pour que le monde se charge
+    })
+
+    // Écouter les paquets de mise à jour des blocs pour détecter les portes
+    client.on('level_chunk', (packet) => {
+        // Ici tu pourrais analyser les chunks pour trouver les portes
+        // Mais c'est complexe, on va plutôt utiliser une approche plus simple
+    })
+
+    // Utiliser une commande de test pour voir les blocs autour
+    client.on('text', (packet) => {
+        if (packet.type === 'chat') {
+            console.log(`${packet.source_name}: ${packet.message}`)
+
+            if (packet.message === `Hi ${username}` || packet.message === `hi ${username}`) {
+                popularity++
+                sendChat(`hi ${packet.source_name}`)
+            }
+
+            if (packet.message === `${username} help` || packet.message === `help ${username}`) {
+                sendChat(`Commandes: Hi ${username}`)
+                sendChat(`Made by https://github.com/healer-op/AternosAfkBot`)
+            }
+        }
     })
 
     client.on('error', (err) => {
@@ -90,22 +114,194 @@ function startBot() {
     client.on('kick', (packet) => {
         console.log('Kické par le serveur:', JSON.stringify(packet, null, 2))
     })
+}
 
-    client.on('text', (packet) => {
-        if (packet.type === 'chat') {
-            console.log(`${packet.source_name}: ${packet.message}`)
-
-            if (packet.message === `Hi ${username}` || packet.message === `hi ${username}`) {
-                popularity++
-                sendChat(`hi ${packet.source_name}`)
-            }
-
-            if (packet.message === `${username} help` || packet.message === `help ${username}`) {
-                sendChat(`Commandes: Hi ${username}`)
-                sendChat(`Made by https://github.com/healer-op/AternosAfkBot`)
-            }
+// Nouvelle fonction pour trouver et interagir avec une porte
+function findAndInteractWithDoor() {
+    if (!client) return
+    
+    console.log('Recherche d\'une porte à proximité...')
+    
+    // Position du joueur
+    const pos = spawnPosition
+    
+    // Vérifier les blocs autour du joueur (dans un rayon de 2 blocs)
+    const offsets = [
+        // Devant
+        { x: 0, y: 0, z: 1 },
+        { x: 0, y: 1, z: 1 },
+        { x: 0, y: -1, z: 1 },
+        // Derrière
+        { x: 0, y: 0, z: -1 },
+        { x: 0, y: 1, z: -1 },
+        { x: 0, y: -1, z: -1 },
+        // Gauche
+        { x: 1, y: 0, z: 0 },
+        { x: 1, y: 1, z: 0 },
+        { x: 1, y: -1, z: 0 },
+        // Droite
+        { x: -1, y: 0, z: 0 },
+        { x: -1, y: 1, z: 0 },
+        { x: -1, y: -1, z: 0 },
+    ]
+    
+    // IDs des types de portes (à vérifier selon la version)
+    const doorIds = [
+        'minecraft:oak_door', 
+        'minecraft:spruce_door', 
+        'minecraft:birch_door', 
+        'minecraft:jungle_door',
+        'minecraft:acacia_door', 
+        'minecraft:dark_oak_door',
+        'minecraft:iron_door',
+        'minecraft:mangrove_door',
+        'minecraft:cherry_door',
+        'minecraft:bamboo_door',
+        'minecraft:crimson_door',
+        'minecraft:warped_door'
+    ]
+    
+    // Pour chaque offset, vérifier si c'est une porte
+    for (const offset of offsets) {
+        const checkPos = {
+            x: Math.floor(pos.x + offset.x),
+            y: Math.floor(pos.y + offset.y),
+            z: Math.floor(pos.z + offset.z)
         }
+        
+        // Demander l'état du bloc
+        client.queue('command_request', {
+            command: `/testforblock ${checkPos.x} ${checkPos.y} ${checkPos.z} oak_door`
+            // Cette commande peut ne pas fonctionner sur tous les serveurs
+        })
+        
+        console.log(`Vérification du bloc en position ${checkPos.x}, ${checkPos.y}, ${checkPos.z}`)
+    }
+    
+    // Méthode alternative : interagir directement avec le bloc devant le joueur
+    setTimeout(() => {
+        interactWithBlockInFront()
+    }, 1000)
+}
+
+// Fonction pour interagir avec le bloc devant le joueur
+function interactWithBlockInFront() {
+    console.log('Tentative d\'interaction avec le bloc devant le joueur...')
+    
+    // Calculer la position du bloc devant le joueur
+    const pos = spawnPosition
+    const yaw = spawnRotation.yaw
+    
+    // Convertir le yaw en direction
+    let forwardX = 0
+    let forwardZ = 0
+    
+    // Yaw de 0 = nord, 90 = est, 180 = sud, 270 = ouest
+    // Ajuster selon la convention de Minecraft
+    const rad = (yaw * Math.PI) / 180
+    forwardX = -Math.sin(rad)
+    forwardZ = -Math.cos(rad)
+    
+    // Arrondir à l'entier le plus proche
+    const blockX = Math.round(pos.x + forwardX * 1.5)
+    const blockZ = Math.round(pos.z + forwardZ * 1.5)
+    const blockY = Math.floor(pos.y) // Au niveau des yeux du joueur
+    
+    console.log(`Bloc devant le joueur : ${blockX}, ${blockY}, ${blockZ}`)
+    
+    // Envoyer un paquet d'interaction avec le bloc
+    // Méthode 1 : Utiliser player_action pour interagir avec le bloc
+    client.queue('player_action', {
+        runtime_entity_id: entityRuntimeId,
+        action: 'interact', // ou 'start_break' pour détruire
+        position: { x: blockX, y: blockY, z: blockZ },
+        face: 1 // La face à interagir (1 = haut, 2 = bas, etc.)
     })
+    
+    console.log('Paquet d\'interaction envoyé !')
+    
+    // Méthode 2 : Utiliser interact comme alternative
+    setTimeout(() => {
+        client.queue('interact', {
+            runtime_entity_id: entityRuntimeId,
+            action: 'open_inventory' // Ou 'mouseover' pour interagir avec un bloc
+        })
+        console.log('Paquet interact envoyé !')
+    }, 500)
+    
+    // Méthode 3 : Essayer d'utiliser une commande (si disponible)
+    setTimeout(() => {
+        // Envoyer un click droit sur le bloc
+        client.queue('player_action', {
+            runtime_entity_id: entityRuntimeId,
+            action: 'start_break',
+            position: { x: blockX, y: blockY, z: blockZ },
+            face: 1
+        })
+        
+        // Puis immédiatement arrêter pour simuler un click
+        setTimeout(() => {
+            client.queue('player_action', {
+                runtime_entity_id: entityRuntimeId,
+                action: 'abort_break',
+                position: { x: blockX, y: blockY, z: blockZ },
+                face: 1
+            })
+            console.log('Click droit simulé sur la porte')
+        }, 100)
+    }, 1000)
+}
+
+// Fonction pour envoyer un click droit sur une position spécifique
+function rightClickBlock(x, y, z) {
+    if (!client) return
+    
+    console.log(`Click droit sur le bloc ${x}, ${y}, ${z}`)
+    
+    // Envoyer un paquet d'interaction
+    client.queue('player_action', {
+        runtime_entity_id: entityRuntimeId,
+        action: 'start_break',
+        position: { x: x, y: y, z: z },
+        face: 1
+    })
+    
+    // Annuler l'action pour simuler un click droit
+    setTimeout(() => {
+        client.queue('player_action', {
+            runtime_entity_id: entityRuntimeId,
+            action: 'abort_break',
+            position: { x: x, y: y, z: z },
+            face: 1
+        })
+    }, 100)
+}
+
+// Fonction pour trouver automatiquement la porte en avançant
+function findDoorByMoving() {
+    console.log('Déplacement pour trouver une porte...')
+    
+    // Positions à tester en avançant
+    const positions = [
+        { x: 0, z: 1 },
+        { x: 0, z: 2 },
+        { x: 1, z: 1 },
+        { x: -1, z: 1 },
+        { x: 0, z: 3 }
+    ]
+    
+    for (const pos of positions) {
+        const checkPos = {
+            x: Math.floor(spawnPosition.x + pos.x),
+            y: Math.floor(spawnPosition.y),
+            z: Math.floor(spawnPosition.z + pos.z)
+        }
+        
+        // Essayer d'interagir avec chaque position
+        setTimeout(() => {
+            rightClickBlock(checkPos.x, checkPos.y, checkPos.z)
+        }, 500 * positions.indexOf(pos))
+    }
 }
 
 function sendChat(message) {
@@ -119,58 +315,6 @@ function sendChat(message) {
         filtered_message: '',
         message: message
     })
-}
-
-// Fonction gardée mais désactivée (plus jamais appelée) : à n'utiliser QUE
-// si tu vérifies d'abord que start_game indique bien le mode "server
-// authoritative movement" activé. Sinon ça provoque un kick immédiat.
-function startTickLoop() {
-    if (tickInterval) clearInterval(tickInterval)
-    let tick = 0n
-
-    tickInterval = setInterval(() => {
-        tick++
-        client.queue('player_auth_input', {
-            pitch: spawnRotation.pitch,
-            yaw: spawnRotation.yaw,
-            position: { x: spawnPosition.x, y: spawnPosition.y, z: spawnPosition.z },
-            move_vector: { x: 0, z: 0 },
-            head_yaw: spawnRotation.headYaw,
-            input_data: {
-                ascend: false, descend: false, north_jump: false, jump_down: false,
-                sprint_down: false, change_height: false, jumping: false,
-                auto_jumping_in_water: false, sneaking: false, sneak_down: false,
-                up: false, down: false, left: false, right: false,
-                up_left: false, up_right: false, want_up: false, want_down: false,
-                want_down_slow: false, want_up_slow: false, sprinting: false,
-                ascend_block: false, descend_block: false, sneak_toggle_down: false,
-                persist_sneak: false, start_sprinting: false, stop_sprinting: false,
-                start_sneaking: false, stop_sneaking: false, start_swimming: false,
-                stop_swimming: false, start_jumping: false, start_gliding: false,
-                stop_gliding: false, item_interact: false, block_action: false,
-                item_stack_request: false, handled_teleport: false, emoting: false,
-                missed_swing: false, start_crawling: false, stop_crawling: false,
-                start_flying: false, stop_flying: false, received_server_data: false,
-                client_predicted_vehicle: false, paddling_left: false, paddling_right: false,
-                block_breaking_delay_enabled: false, horizontal_collision: false,
-                vertical_collision: false, down_left: false, down_right: false,
-                start_using_item: false, camera_relative_movement_enabled: false,
-                rot_controlled_by_move_direction: false, start_spin_attack: false,
-                stop_spin_attack: false, hotbar_only_touch: false, jump_released_raw: false,
-                jump_pressed_raw: false, jump_current_raw: false, sneak_released_raw: false,
-                sneak_pressed_raw: false, sneak_current_raw: false
-            },
-            input_mode: 'mouse',
-            play_mode: 'normal',
-            interaction_model: 'crosshair',
-            interact_rotation: { x: 0, z: 0 },
-            tick: tick,
-            delta: { x: 0, y: 0, z: 0 },
-            analogue_move_vector: { x: 0, z: 0 },
-            camera_orientation: { x: 0, y: 0, z: 0 },
-            raw_move_vector: { x: 0, z: 0 }
-        })
-    }, 50) // 20 fois par seconde
 }
 
 function reconnect() {
