@@ -182,15 +182,14 @@ function startAntiIdleMovement() {
                 input_data: [],
                 input_mode: 'mouse',
                 play_mode: 'normal',
-                interaction_model: 'touch',
+                interaction_model: 'classic',
+                interact_rotation: { x: 0, y: 0 },
                 tick: BigInt(tickCounter),
                 delta: {
                     x: prevPosition ? actualPosition.x - prevPosition.x : 0,
                     y: prevPosition ? actualPosition.y - prevPosition.y : 0,
                     z: prevPosition ? actualPosition.z - prevPosition.z : 0
-                },
-                analogue_move_vector: { x: 0, z: 0 },
-                camera_orientation: { x: 0, y: 0, z: 0 }
+                }
             })
 
             prevPosition = { ...actualPosition }
