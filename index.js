@@ -22,6 +22,12 @@ let actualPosition = { x: 0, y: 69, z: 0 }
 let clickInterval = null
 let clickCount = 0
 
+// --- Anti-idle par mouvement réel ---
+let moveState = 'walk' // 'walk' ou 'jump'
+let stateStartTime = Date.now()
+let walkDirection = 1 // 1 ou -1, pour faire des allers-retours
+let tickCounter = 0
+
 function startBot() {
     client = bedrock.createClient({
         host: host,
@@ -40,7 +46,7 @@ function startBot() {
         entityRuntimeId = packet.runtime_entity_id
         if (packet.player_position) {
             spawnPosition = packet.player_position
-            actualPosition = packet.player_position
+            actualPosition = { ...packet.player_position }
             console.log('Position de spawn reçue:', spawnPosition)
         }
         if (typeof packet.rotation !== 'undefined') {
@@ -62,10 +68,10 @@ function startBot() {
         }
 
         sendChat('hello')
-        
-        // Démarrer le spam de clics après 2 secondes
+
+        // Démarrer l'anti-idle après 2 secondes
         setTimeout(() => {
-            startSpamClick()
+            startAntiIdleMovement()
         }, 2000)
     })
 
@@ -93,7 +99,7 @@ function startBot() {
         console.log('Déconnecté')
         connected = 0
         if (tickInterval) clearInterval(tickInterval)
-        if (clickInterval) clearInterval(clickInterval)
+        stopAntiIdleMovement()
         reconnect()
     })
 
@@ -101,7 +107,7 @@ function startBot() {
         console.log('Connexion fermée')
         connected = 0
         if (tickInterval) clearInterval(tickInterval)
-        if (clickInterval) clearInterval(clickInterval)
+        stopAntiIdleMovement()
         reconnect()
     })
 
@@ -110,16 +116,11 @@ function startBot() {
     })
 }
 
-// Fonction pour spammer le click droit (interaction)
-// Fonction pour éviter l'idle timeout : saut périodique (action valide du protocole)
-// --- Anti-idle par mouvement réel ---
-let moveState = 'walk' // 'walk' ou 'jump'
-let stateStartTime = Date.now()
-let walkDirection = 1 // 1 ou -1, pour faire des allers-retours
-let tickCounter = 0
-
+// Fonction anti-idle : alterne marche (5s) et saut (~0.8s)
 function startAntiIdleMovement() {
-    if (clickInterval) clearInterval(clickInterval)
+    if (clickInterval) {
+        clearInterval(clickInterval)
+    }
 
     console.log('========================================')
     console.log('🚶 DÉMARRAGE ANTI-IDLE (marche + saut)')
@@ -127,6 +128,7 @@ function startAntiIdleMovement() {
 
     moveState = 'walk'
     stateStartTime = Date.now()
+    clickCount = 0
 
     clickInterval = setInterval(() => {
         if (!client || entityRuntimeId === null) return
@@ -148,7 +150,7 @@ function startAntiIdleMovement() {
             let onGround = true
 
             if (moveState === 'walk') {
-                // Petit pas dans la direction courante, à ~4.3 blocs/s (vitesse normale)
+                // Petit pas dans la direction courante
                 const speed = 0.13 // blocs par tick (~150ms d'intervalle ici)
                 const yaw = spawnRotation.yaw || 0
                 const rad = (yaw * Math.PI) / 180
@@ -198,15 +200,6 @@ function stopAntiIdleMovement() {
     }
 }
 
-// Fonction pour arrêter le spam
-function stopSpamClick() {
-    if (clickInterval) {
-        clearInterval(clickInterval)
-        clickInterval = null
-        console.log('⏹️ Spam de clics arrêté')
-    }
-}
-
 function sendChat(message) {
     if (!client) return
     client.write('text', {
@@ -223,12 +216,12 @@ function sendChat(message) {
 function reconnect() {
     if (reconnecting) return
     reconnecting = true
-    console.log('Reconnexion dans 5 secondes...')
+    console.log('Reconnexion dans 15 secondes...')
     setTimeout(() => {
         reconnecting = false
-        stopSpamClick()
+        stopAntiIdleMovement()
         startBot()
-    }, 5000)
+    }, 15000) // 15s pour laisser le temps au serveur de nettoyer l'ancienne session
 }
 
 process.on('unhandledRejection', (err) => {
@@ -245,14 +238,14 @@ app.get('/', (req, res) => {
     res.send(`<b>${username}</b> is Online At <b>${host}</b>
     <br><br>Connected: <b>${connected ? 'Yes' : 'No'}</b>
     <br><br>Popularity Counter <b>${popularity}</b>
-    <br><br>Position: ${actualPosition.x}, ${actualPosition.y}, ${actualPosition.z}
-    <br><br>Status: ${clickInterval ? '🟢 Spam de clics actif' : '🔴 Inactif'}
-    <br><br>Clics envoyés: ${clickCount}
+    <br><br>Position: ${actualPosition.x.toFixed(2)}, ${actualPosition.y.toFixed(2)}, ${actualPosition.z.toFixed(2)}
+    <br><br>Status: ${clickInterval ? '🟢 Anti-idle actif (' + moveState + ')' : '🔴 Inactif'}
+    <br><br>Mouvements envoyés: ${clickCount}
     <br><br>Made By <b>https://github.com/healer-op/AternosAfkBot</b>`)
 })
 
 app.listen(port, () => {
     console.log(`Example app listening at http://localhost:${port}`)
     console.log('MADE BY HEALER')
-    console.log('✅ Bot prêt - Spam de click droit actif !')
+    console.log('✅ Bot prêt - Anti-idle (marche + saut) actif !')
 })
