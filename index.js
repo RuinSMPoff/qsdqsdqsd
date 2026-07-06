@@ -27,6 +27,7 @@ let moveState = 'walk' // 'walk' ou 'jump'
 let stateStartTime = Date.now()
 let walkDirection = 1 // 1 ou -1, pour faire des allers-retours
 let tickCounter = 0
+let prevPosition = null
 
 function startBot() {
     client = bedrock.createClient({
@@ -170,17 +171,27 @@ function startAntiIdleMovement() {
 
             tickCounter++
 
-            client.queue('move_player', {
-                runtime_id: Number(entityRuntimeId),
-                position: actualPosition,
+            // player_auth_input = paquet que le CLIENT envoie pour piloter SON PROPRE mouvement
+            // (move_player sert surtout au serveur pour déplacer les autres entités / téléporter)
+            client.queue('player_auth_input', {
                 pitch: spawnRotation.pitch || 0,
                 yaw: spawnRotation.yaw || 0,
+                position: actualPosition,
+                move_vector: { x: 0, z: 0 }, // laissé à 0, c'est le delta de position ci-dessous qui fait bouger
                 head_yaw: spawnRotation.headYaw || spawnRotation.yaw || 0,
-                mode: 'normal',
-                on_ground: onGround,
-                ridden_runtime_id: 0,
-                tick: BigInt(tickCounter)
+                input_data: [],
+                input_mode: 'mouse',
+                play_mode: 'normal',
+                interaction_model: 'touch',
+                tick: BigInt(tickCounter),
+                delta: {
+                    x: prevPosition ? actualPosition.x - prevPosition.x : 0,
+                    y: prevPosition ? actualPosition.y - prevPosition.y : 0,
+                    z: prevPosition ? actualPosition.z - prevPosition.z : 0
+                }
             })
+
+            prevPosition = { ...actualPosition }
 
             clickCount++
             if (clickCount % 50 === 0) {
