@@ -111,119 +111,40 @@ function startBot() {
 }
 
 // Fonction pour spammer le click droit (interaction)
+// Fonction pour éviter l'idle timeout : saut périodique (action valide du protocole)
 function startSpamClick() {
     if (clickInterval) {
         clearInterval(clickInterval)
     }
-    
+
     console.log('========================================')
-    console.log('🚀 DÉMARRAGE DU SPAM DE CLIC DROIT')
-    console.log(`📌 Position actuelle: ${actualPosition.x}, ${actualPosition.y}, ${actualPosition.z}`)
-    console.log('🔄 Le bot clique toutes les 100ms')
+    console.log('🚀 DÉMARRAGE ANTI-IDLE (saut périodique)')
     console.log('========================================')
-    
+
     clickCount = 0
-    
+
     clickInterval = setInterval(() => {
-        if (!client || !entityRuntimeId) return
-        
-        // Utiliser la position actuelle du joueur
-        const pos = actualPosition
-        
+        if (!client || entityRuntimeId === null) return
+
         try {
-            // Envoyer un click droit sur le bloc devant le joueur
-            // Calculer la direction devant le joueur
-            const yaw = spawnRotation.yaw || 0
-            const rad = (yaw * Math.PI) / 180
-            const forwardX = -Math.sin(rad)
-            const forwardZ = -Math.cos(rad)
-            
-            const blockX = Math.round(pos.x + forwardX * 1.5)
-            const blockZ = Math.round(pos.z + forwardZ * 1.5)
-            const blockY = Math.floor(pos.y)
-            
-            // CLIC DROIT (interaction) - pas de destruction
+            // 'jump' est une action VALIDE de l'enum player_action
             client.queue('player_action', {
                 runtime_entity_id: entityRuntimeId,
-                action: 'interact', // INTERACT = click droit
-                position: { 
-                    x: blockX, 
-                    y: blockY + (clickCount % 2), // Alterne entre le bloc et le bloc au-dessus
-                    z: blockZ 
-                },
-                face: 1 // Face supérieure
+                action: 'jump',
+                position: actualPosition,
+                result_position: actualPosition,
+                data: 0
             })
-            
-            // Envoyer aussi un paquet interact pour être sûr
-            client.queue('interact', {
-                runtime_entity_id: entityRuntimeId,
-                action: 'interact',
-                target_runtime_entity_id: -1
-            })
-            
-            // Alterner les positions pour plus de chances
-            // Cliquer sur différentes positions autour
-            if (clickCount % 4 === 0) {
-                // Devant
-                client.queue('player_action', {
-                    runtime_entity_id: entityRuntimeId,
-                    action: 'interact',
-                    position: { 
-                        x: blockX, 
-                        y: blockY, 
-                        z: blockZ 
-                    },
-                    face: 1
-                })
-            } else if (clickCount % 4 === 1) {
-                // Devant + haut
-                client.queue('player_action', {
-                    runtime_entity_id: entityRuntimeId,
-                    action: 'interact',
-                    position: { 
-                        x: blockX, 
-                        y: blockY + 1, 
-                        z: blockZ 
-                    },
-                    face: 1
-                })
-            } else if (clickCount % 4 === 2) {
-                // À droite
-                client.queue('player_action', {
-                    runtime_entity_id: entityRuntimeId,
-                    action: 'interact',
-                    position: { 
-                        x: blockX + 1, 
-                        y: blockY, 
-                        z: blockZ 
-                    },
-                    face: 1
-                })
-            } else {
-                // À gauche
-                client.queue('player_action', {
-                    runtime_entity_id: entityRuntimeId,
-                    action: 'interact',
-                    position: { 
-                        x: blockX - 1, 
-                        y: blockY, 
-                        z: blockZ 
-                    },
-                    face: 1
-                })
-            }
-            
+
             clickCount++
-            
-            // Afficher un message toutes les 100 clics
-            if (clickCount % 100 === 0) {
-                console.log(`[${clickCount}] ✅ Clics d'interaction envoyés sur le bloc ${blockX}, ${blockY}, ${blockZ}`)
+
+            if (clickCount % 50 === 0) {
+                console.log(`[${clickCount}] ✅ Saut envoyé (anti-idle actif)`)
             }
-            
         } catch (error) {
-            console.error('❌ Erreur lors du clic:', error.message)
+            console.error('❌ Erreur lors du saut:', error.message)
         }
-    }, 100) // Clic toutes les 100ms (10 clics par seconde)
+    }, 3000) // toutes les 3s, largement suffisant pour reset l'idle timer
 }
 
 // Fonction pour arrêter le spam
