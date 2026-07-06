@@ -179,7 +179,7 @@ client.queue('player_auth_input', {
     position: actualPosition,
     move_vector: { x: 0, y: 0 },
     head_yaw: spawnRotation.headYaw || spawnRotation.yaw || 0,
-    input_data: [],
+    input_data: {},
     input_mode: 'mouse',
     play_mode: 'normal',
     interaction_model: 'classic',
