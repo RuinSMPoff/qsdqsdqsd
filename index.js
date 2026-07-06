@@ -171,15 +171,15 @@ function startAntiIdleMovement() {
             tickCounter++
 
             client.queue('move_player', {
-                runtime_id: entityRuntimeId,
+                runtime_id: BigInt(entityRuntimeId),
                 position: actualPosition,
                 pitch: spawnRotation.pitch || 0,
                 yaw: spawnRotation.yaw || 0,
                 head_yaw: spawnRotation.headYaw || spawnRotation.yaw || 0,
                 mode: 'normal',
                 on_ground: onGround,
-                ridden_runtime_id: 0,
-                tick: tickCounter
+                ridden_runtime_id: BigInt(0),
+                tick: BigInt(tickCounter)
             })
 
             clickCount++
