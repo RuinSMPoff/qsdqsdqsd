@@ -1,5 +1,9 @@
 {
 	"ip": "ruin-anarchy.aternos.me",
 	"port": 59487,
-	"name": "MR_MR11"
-  }
+	"name": "AntiAFK",
+	"auto-night-skip": "false",
+	"login-enabled": "true",
+	"register-cmd": "/register AntiAFK123 AntiAFK123",
+	"login-cmd": "/login AntiAFK123"
+}
