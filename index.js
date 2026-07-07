@@ -1,206 +1,283 @@
-const bedrock = require('bedrock-protocol')
+const mineflayer = require('mineflayer')
+const pvp = require('mineflayer-pvp').plugin
+const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+const armorManager = require('mineflayer-armor-manager')
 const fs = require('fs')
 const express = require('express')
 
 let rawdata = fs.readFileSync('config.json')
 let data = JSON.parse(rawdata)
 
-var host = data["ip"]
-var username = data["name"]
-var connected = 0
-var reconnecting = false
+const host = data['ip']
+const botPort = data['port']
+const username = data['name']
+const nightSkip = data['auto-night-skip'] === 'true'
+const loginEnabled = data['login-enabled'] === 'true'
 
+// --- État global ---
+let connected = 0
+let death = 0
 let popularity = 0
+let pvpCount = 0
+let reconnecting = false
+let bot = null
 
-let client
-let tickInterval = null
-let entityRuntimeId = null
-let spawnPosition = { x: 0, y: 64, z: 0 }
-let spawnRotation = { pitch: 0, yaw: 0, headYaw: 0 }
+// --- Anti-idle ---
+const actions = ['forward', 'back', 'left', 'right']
+let moveInterval = 2      // secondes minimum entre 2 actions
+let maxRandomAdd = 5      // secondes aléatoires en plus
+let lastActionTime = -1
+let moving = false
+let lastAction = null
 
-function startBot() {
-    client = bedrock.createClient({
+function createBot() {
+    bot = mineflayer.createBot({
         host: host,
-        port: data["port"],
+        port: botPort,
         username: username,
-        offline: false,
-        auth: 'microsoft'
-        // version: '1.21.50' // décommente et adapte si le serveur refuse la connexion (mismatch de version)
+        // Si le serveur tourne sur une version que mineflayer ne connaît pas encore
+        // (ex: Minecraft 26.x), il FAUT ViaFabric côté serveur pour traduire le
+        // protocole, et forcer ici une version que mineflayer supporte, ex: '1.21.4'
+        version: false,
+        logErrors: false
     })
 
-    client.on('join', () => {
-        console.log('Connecté au serveur Bedrock')
+    bot.loadPlugin(pvp)
+    bot.loadPlugin(armorManager)
+    bot.loadPlugin(pathfinder)
+
+    registerEvents()
+}
+
+function registerEvents() {
+    bot.on('login', () => {
+        console.log('Connexion en cours...')
+
+        if (loginEnabled) {
+            bot.chat(data['login-cmd'])
+            setTimeout(() => {
+                bot.chat(data['register-cmd'])
+            }, 2000)
+        }
+    })
+
+    bot.on('spawn', () => {
         connected = 1
-    })
-
-    // Récupère l'ID d'entité et la position/rotation réelles de spawn
-    client.on('start_game', (packet) => {
-        entityRuntimeId = packet.runtime_entity_id
-        if (packet.player_position) {
-            spawnPosition = packet.player_position
-        }
-        if (typeof packet.rotation !== 'undefined') {
-            spawnRotation.pitch = packet.rotation.x || 0
-            spawnRotation.yaw = packet.rotation.y || 0
-            spawnRotation.headYaw = packet.rotation.y || 0
-        }
-        console.log('start_game reçu, position de spawn:', spawnPosition)
-    })
-
-    client.on('spawn', () => {
         console.log('Bot spawn dans le monde')
+        bot.chat('hello')
+        startPromoLoop()
+    })
 
-        // ÉTAPE OBLIGATOIRE : sans ce paquet le serveur considère
-        // que le joueur n'a jamais fini de charger et le déconnecte.
-        if (entityRuntimeId !== null) {
-            client.queue('set_local_player_as_initialized', {
-                runtime_entity_id: entityRuntimeId
-            })
-            console.log('set_local_player_as_initialized envoyé')
+    bot.on('physicTick', () => {
+        handleAntiIdle()
+        handleLookAt()
+        handleGuard()
+    })
+
+    bot.on('death', () => {
+        death++
+        console.log('Le bot est mort, respawn automatique par le serveur')
+    })
+
+    bot.on('end', (reason) => {
+        console.log('Connexion terminée:', reason)
+        connected = 0
+        reconnect()
+    })
+
+    bot.on('kicked', (reason) => {
+        console.log('Kické par le serveur:', reason)
+        connected = 0
+    })
+
+    bot.on('error', (err) => {
+        console.log('Erreur bot:', err.message)
+    })
+
+    bot.on('playerCollect', (collector) => {
+        if (collector !== bot.entity) return
+        setTimeout(() => {
+            const sword = bot.inventory.items().find(item => item.name.includes('sword'))
+            if (sword) bot.equip(sword, 'hand').catch(() => {})
+        }, 150)
+        setTimeout(() => {
+            const shield = bot.inventory.items().find(item => item.name.includes('shield'))
+            if (shield) bot.equip(shield, 'off-hand').catch(() => {})
+        }, 250)
+    })
+
+    bot.on('stoppedAttacking', () => {
+        if (guardPos) moveToGuardPos()
+    })
+
+    bot.on('chat', (senderUsername, message) => {
+        if (senderUsername === bot.username) return
+        handleChatCommands(senderUsername, message)
+    })
+
+    bot.on('time', () => {
+        if (!nightSkip) return
+        if (bot.time.timeOfDay >= 13000) {
+            bot.chat('/time set day')
+        }
+    })
+}
+
+// --- Anti-idle : marche aléatoire pour éviter le kick AFK ---
+function handleAntiIdle() {
+    if (connected < 1) return
+    if (!bot.time) return
+
+    if (lastActionTime < 0) {
+        lastActionTime = bot.time.age
+        return
+    }
+
+    const randomAdd = Math.random() * maxRandomAdd * 20
+    const interval = moveInterval * 20 + randomAdd
+
+    if (bot.time.age - lastActionTime > interval) {
+        if (moving) {
+            bot.setControlState(lastAction, false)
+            moving = false
         } else {
-            console.log('ATTENTION: entityRuntimeId non défini, set_local_player_as_initialized non envoyé')
+            const yaw = Math.random() * Math.PI - Math.PI / 2
+            const pitch = Math.random() * Math.PI - Math.PI / 2
+            bot.look(yaw, pitch, false)
+            lastAction = actions[Math.floor(Math.random() * actions.length)]
+            bot.setControlState(lastAction, true)
+            moving = true
         }
+        lastActionTime = bot.time.age
+    }
+}
 
-        sendChat('hello')
-        // Pas besoin d'envoyer de mouvement pour rester connecté :
-        // RakNet gère le keep-alive tout seul au niveau de la connexion.
-        // Envoyer player_auth_input sans que le serveur l'attende (mode
-        // "Server Authoritative Movement" désactivé côté PocketMine-MP)
-        // provoque un "Packet processing error" et un kick immédiat.
-    })
+// Regarde l'entité la plus proche quand il ne fait rien d'autre
+function handleLookAt() {
+    if (bot.pvp.target) return
+    if (bot.pathfinder.isMoving()) return
 
-    client.on('error', (err) => {
-        console.log('Erreur client:', err.message)
-    })
+    const entity = bot.nearestEntity()
+    if (entity) bot.lookAt(entity.position.offset(0, entity.height, 0))
+}
 
-    client.on('disconnect', (packet) => {
-        console.log('Déconnecté, raison complète:', JSON.stringify(packet, null, 2))
-        connected = 0
-        if (tickInterval) clearInterval(tickInterval)
-        reconnect()
-    })
+// --- Garde une zone et attaque les mobs proches ---
+let guardPos = null
 
-    client.on('close', () => {
-        console.log('Connexion fermée')
-        connected = 0
-        if (tickInterval) clearInterval(tickInterval)
-        reconnect()
-    })
+function guardArea(pos) {
+    guardPos = pos.clone()
+    if (!bot.pvp.target) moveToGuardPos()
+}
 
-    client.on('kick', (packet) => {
-        console.log('Kické par le serveur:', JSON.stringify(packet, null, 2))
-    })
+function stopGuarding() {
+    guardPos = null
+    bot.pvp.stop()
+    bot.pathfinder.setGoal(null)
+}
 
-    client.on('text', (packet) => {
-        if (packet.type === 'chat') {
-            console.log(`${packet.source_name}: ${packet.message}`)
+function moveToGuardPos() {
+    const mcData = require('minecraft-data')(bot.version)
+    bot.pathfinder.setMovements(new Movements(bot, mcData))
+    bot.pathfinder.setGoal(new goals.GoalBlock(guardPos.x, guardPos.y, guardPos.z))
+}
 
-            if (packet.message === `Hi ${username}` || packet.message === `hi ${username}`) {
-                popularity++
-                sendChat(`hi ${packet.source_name}`)
-            }
+function handleGuard() {
+    if (!guardPos) return
+    const filter = e => e.type === 'mob' &&
+        e.position.distanceTo(bot.entity.position) < 16 &&
+        e.mobType !== 'Armor Stand'
+    const entity = bot.nearestEntity(filter)
+    if (entity) bot.pvp.attack(entity)
+}
 
-            if (packet.message === `${username} help` || packet.message === `help ${username}`) {
-                sendChat(`Commandes: Hi ${username}`)
-                sendChat(`Made by https://github.com/healer-op/AternosAfkBot`)
-            }
+// --- Commandes chat ---
+function handleChatCommands(senderUsername, message) {
+    const name = bot.username
+
+    if (message.toLowerCase() === `hi ${name}`.toLowerCase() ||
+        message.toLowerCase() === `hello ${name}`.toLowerCase()) {
+        popularity++
+        bot.chat(`hi ${senderUsername}`)
+        return
+    }
+
+    if (message.toLowerCase() === `${name} help`.toLowerCase()) {
+        bot.chat(`Commandes disponibles pour ${senderUsername}:`)
+        bot.chat(`- hi ${name}`)
+        bot.chat(`- guard ${name}`)
+        bot.chat(`- fight me ${name}`)
+        bot.chat(`- stop`)
+        return
+    }
+
+    if (message.toLowerCase() === `guard ${name}`.toLowerCase()) {
+        const player = bot.players[senderUsername]
+        if (!player || !player.entity) {
+            bot.chat(`Je ne te vois pas, ${senderUsername}`)
+            return
         }
-    })
+        bot.chat(`Je garde cette zone, ${senderUsername}`)
+        guardArea(player.entity.position)
+        return
+    }
+
+    if (message.toLowerCase() === `fight me ${name}`.toLowerCase()) {
+        const player = bot.players[senderUsername]
+        if (!player || !player.entity) {
+            bot.chat(`Je ne te vois pas, ${senderUsername}`)
+            return
+        }
+        bot.chat(`Prépare-toi, ${senderUsername}`)
+        pvpCount++
+        bot.pvp.attack(player.entity)
+        return
+    }
+
+    if (message.toLowerCase() === 'stop') {
+        bot.chat('Je ne garde plus cette zone')
+        stopGuarding()
+    }
 }
 
-function sendChat(message) {
-    if (!client) return
-    client.write('text', {
-        type: 'chat',
-        needs_translation: false,
-        source_name: username,
-        xuid: '',
-        platform_chat_id: '',
-        filtered_message: '',
-        message: message
-    })
+// --- Message promo toutes les heures, 10 fois max ---
+function startPromoLoop() {
+    for (let i = 1; i <= 10; i++) {
+        setTimeout(() => {
+            if (connected) bot.chat('AntiAFK bot - https://github.com/healer-op/AternosAfkBot')
+        }, 3600000 * i)
+    }
 }
 
-// Fonction gardée mais désactivée (plus jamais appelée) : à n'utiliser QUE
-// si tu vérifies d'abord que start_game indique bien le mode "server
-// authoritative movement" activé. Sinon ça provoque un kick immédiat.
-function startTickLoop() {
-    if (tickInterval) clearInterval(tickInterval)
-    let tick = 0n
-
-    tickInterval = setInterval(() => {
-        tick++
-        client.queue('player_auth_input', {
-            pitch: spawnRotation.pitch,
-            yaw: spawnRotation.yaw,
-            position: { x: spawnPosition.x, y: spawnPosition.y, z: spawnPosition.z },
-            move_vector: { x: 0, z: 0 },
-            head_yaw: spawnRotation.headYaw,
-            input_data: {
-                ascend: false, descend: false, north_jump: false, jump_down: false,
-                sprint_down: false, change_height: false, jumping: false,
-                auto_jumping_in_water: false, sneaking: false, sneak_down: false,
-                up: false, down: false, left: false, right: false,
-                up_left: false, up_right: false, want_up: false, want_down: false,
-                want_down_slow: false, want_up_slow: false, sprinting: false,
-                ascend_block: false, descend_block: false, sneak_toggle_down: false,
-                persist_sneak: false, start_sprinting: false, stop_sprinting: false,
-                start_sneaking: false, stop_sneaking: false, start_swimming: false,
-                stop_swimming: false, start_jumping: false, start_gliding: false,
-                stop_gliding: false, item_interact: false, block_action: false,
-                item_stack_request: false, handled_teleport: false, emoting: false,
-                missed_swing: false, start_crawling: false, stop_crawling: false,
-                start_flying: false, stop_flying: false, received_server_data: false,
-                client_predicted_vehicle: false, paddling_left: false, paddling_right: false,
-                block_breaking_delay_enabled: false, horizontal_collision: false,
-                vertical_collision: false, down_left: false, down_right: false,
-                start_using_item: false, camera_relative_movement_enabled: false,
-                rot_controlled_by_move_direction: false, start_spin_attack: false,
-                stop_spin_attack: false, hotbar_only_touch: false, jump_released_raw: false,
-                jump_pressed_raw: false, jump_current_raw: false, sneak_released_raw: false,
-                sneak_pressed_raw: false, sneak_current_raw: false
-            },
-            input_mode: 'mouse',
-            play_mode: 'normal',
-            interaction_model: 'crosshair',
-            interact_rotation: { x: 0, z: 0 },
-            tick: tick,
-            delta: { x: 0, y: 0, z: 0 },
-            analogue_move_vector: { x: 0, z: 0 },
-            camera_orientation: { x: 0, y: 0, z: 0 },
-            raw_move_vector: { x: 0, z: 0 }
-        })
-    }, 50) // 20 fois par seconde
-}
-
+// --- Reconnexion automatique ---
 function reconnect() {
     if (reconnecting) return
     reconnecting = true
-    console.log('Reconnexion dans 5 secondes...')
+    console.log('Reconnexion dans 10 secondes...')
     setTimeout(() => {
         reconnecting = false
-        startBot()
-    }, 5000)
+        createBot()
+    }, 10000)
 }
 
 process.on('unhandledRejection', (err) => {
     console.error('Unhandled rejection:', err.message)
 })
 
-startBot()
+createBot()
 
-// --- Express (site web de statut) ---
+// --- Serveur web de statut ---
 const port = process.env.PORT || 3000
 const app = express()
 
 app.get('/', (req, res) => {
     res.send(`<b>${username}</b> is Online At <b>${host}</b>
     <br><br>Connected: <b>${connected ? 'Yes' : 'No'}</b>
-    <br><br>Popularity Counter <b>${popularity}</b>
+    <br><br>Death Counter: <b>${death}</b>
+    <br><br>Popularity Counter: <b>${popularity}</b>
+    <br><br>PvP Counter: <b>${pvpCount}</b>
     <br><br>Made By <b>https://github.com/healer-op/AternosAfkBot</b>`)
 })
 
 app.listen(port, () => {
-    console.log(`Example app listening at http://localhost:${port}`)
-    console.log('MADE BY HEALER')
+    console.log(`Status page listening at http://localhost:${port}`)
 })
