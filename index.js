@@ -31,11 +31,10 @@ let moving = false
 let lastAction = null
 
 function createBot() {
-bot = mineflayer.createBot({
+ bot = mineflayer.createBot({
     host: host,
     port: botPort,
     username: username,
-    version: '1.21.4',
     logErrors: false
 })
 
