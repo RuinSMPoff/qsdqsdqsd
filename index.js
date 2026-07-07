@@ -109,6 +109,7 @@ function registerEvents() {
     bot.on('chat', (senderUsername, message) => {
         if (senderUsername === bot.username) return
         handleChatCommands(senderUsername, message)
+        console.log("Connecté en version :", bot.version)
     })
 
     bot.on('time', () => {
