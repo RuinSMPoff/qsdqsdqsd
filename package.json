@@ -2,6 +2,7 @@
   "mineflayer": "latest",
   "minecraft-data": "latest",
   "minecraft-protocol": "latest",
+  "prismarine-registry": "latest",
   "express": "^4.18.1",
   "mineflayer-armor-manager": "^1.4.2",
   "mineflayer-pathfinder": "^2.1.1",
