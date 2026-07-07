@@ -1,9 +1,22 @@
-"dependencies": {
-  "mineflayer": "latest",
-  "minecraft-data": "latest",
-  "minecraft-protocol": "latest",
-  "express": "^4.18.1",
-  "mineflayer-armor-manager": "^1.4.2",
-  "mineflayer-pathfinder": "^2.1.1",
-  "mineflayer-pvp": "^1.2.1"
+{
+  "name": "newbie",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "config": "^3.3.7",
+    "express": "^4.18.1",
+    "fs": "^0.0.1-security",
+    "mineflayer": "^4.3.0",
+    "mineflayer-armor-manager": "^1.4.2",
+    "mineflayer-cmd": "^1.1.3",
+    "mineflayer-pathfinder": "^2.1.1",
+    "mineflayer-pvp": "^1.2.1"
+  }
 }
