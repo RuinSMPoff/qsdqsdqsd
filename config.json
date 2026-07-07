@@ -1,9 +1,5 @@
 {
-	"ip":"ruin-anarchy.aternos.me",
+	"ip": "ruin-anarchy.aternos.me",
 	"port": 59487,
-	"name": "PAF",
-	"auto-night-skip":"false",
-	"login-enabled":"true",
-	"register-cmd":"/register PAF PAF",
-	"login-cmd":"/login PAF"
-}
+	"name": "MR_MR11"
+  }
