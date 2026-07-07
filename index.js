@@ -35,10 +35,14 @@ function createBot() {
         host: host,
         port: botPort,
         username: username,
-        // Si le serveur tourne sur une version que mineflayer ne connaît pas encore
-        // (ex: Minecraft 26.x), il FAUT ViaFabric côté serveur pour traduire le
-        // protocole, et forcer ici une version que mineflayer supporte, ex: '1.21.4'
-        version: false,
+        // Le serveur tourne en 26.1.2 (protocole 775), que mineflayer ne connaît
+        // pas nativement. ViaFabric est installé côté serveur pour traduire, mais
+        // il faut forcer une version connue ici, sinon mineflayer auto-détecte
+        // et lit le protocole natif 775 avant même d'essayer de se connecter.
+        // mineflayer 4.3.0 embarque une vieille minecraft-data (3.1.1, ~2022) qui
+        // ne connaît PAS 1.21.x : on force donc une version ancienne mais stable
+        // que ViaFabric saura traduire vers 26.1.2 derrière.
+        version: '1.16.5',
         logErrors: false
     })
 
