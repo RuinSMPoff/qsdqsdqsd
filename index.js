@@ -248,11 +248,14 @@ function startPromoLoop() {
 function reconnect() {
     if (reconnecting) return
     reconnecting = true
-    console.log('Reconnexion dans 10 secondes...')
+
+    console.log('Bot déconnecté. Attente de 30 secondes avant reconnexion...')
+
     setTimeout(() => {
         reconnecting = false
+        console.log('Tentative de reconnexion...')
         createBot()
-    }, 10000)
+    }, 30000)
 }
 
 process.on('unhandledRejection', (err) => {
