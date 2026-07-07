@@ -35,7 +35,7 @@ bot = mineflayer.createBot({
     host: host,
     port: botPort,
     username: username,
-    version: '1.21.11',
+    version: '1.21.4',
     logErrors: false
 })
 
