@@ -1,10 +1,18 @@
-"dependencies": {
-  "mineflayer": "latest",
-  "minecraft-data": "latest",
-  "minecraft-protocol": "latest",
-  "prismarine-registry": "latest",
-  "express": "^4.18.1",
-  "mineflayer-armor-manager": "^1.4.2",
-  "mineflayer-pathfinder": "^2.1.1",
-  "mineflayer-pvp": "^1.2.1"
+{
+  "name": "newbie",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "mineflayer": "latest",
+    "minecraft-data": "latest",
+    "minecraft-protocol": "latest",
+    "prismarine-registry": "latest",
+    "express": "^4.18.1",
+    "mineflayer-armor-manager": "^1.4.2",
+    "mineflayer-pathfinder": "^2.1.1",
+    "mineflayer-pvp": "^1.2.1"
+  }
 }
